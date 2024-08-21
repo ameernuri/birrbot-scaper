@@ -199,9 +199,9 @@ const runBankJobs = async () => {
   for (const bank of bankJobs) {
     try {
       console.log('running job:', bank.name)
-      const rates = await bank.job()
+      const res = await bank.job()
 
-      if (!rates) {
+      if (!res || !(Object.keys(res).length > 0)) {
         console.warn(`No rates returned for ${bank.name}. Skipping update.`)
         continue // Skip to the next bank job
       }
@@ -215,6 +215,11 @@ const runBankJobs = async () => {
       const now = new Date().toISOString()
 
       const { slug, name, short } = bank
+
+      const rates = {
+        ...(existing?.banks?.[slug]?.rates || {}),
+        ...res,
+      }
 
       const parsed = {
         [slug]: {
@@ -252,3 +257,5 @@ const runBankJobs = async () => {
 cron.schedule('*/20 * * * *', runBankJobs, {
   name: 'bank_jobs',
 })
+
+runBankJobs()
