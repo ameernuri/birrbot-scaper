@@ -239,7 +239,7 @@ const runBankJobs = async () => {
 
       const now = new Date().toISOString()
 
-      const { slug, name, short } = bank
+      const { slug, name, shortName, symbol } = bank
 
       const updates = Object.keys(res).reduce((a, c) => {
         const update = {
@@ -262,7 +262,8 @@ const runBankJobs = async () => {
           updatedAt: now,
           slug,
           name,
-          short,
+          shortName,
+          symbol,
           rates,
         },
       }
