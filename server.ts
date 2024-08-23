@@ -216,9 +216,20 @@ const runBankJobs = async () => {
 
       const { slug, name, short } = bank
 
+      const updates = Object.keys(res).reduce((a, c) => {
+        const update = {
+          [c]: { ...res[c], updatedAt: now },
+        }
+
+        return {
+          ...a,
+          ...update,
+        }
+      }, {})
+
       const rates = {
         ...(existing?.banks?.[slug]?.rates || {}),
-        ...res,
+        ...updates,
       }
 
       const parsed = {

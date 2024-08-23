@@ -28,7 +28,7 @@ export const getZemenRates = async () => {
 
     await page.goto(url)
 
-    console.log('parsing zemen rates...')
+    console.log('Parsing Zemen Bank exchange rates...')
 
     const currencySelector = '.currency-exchange-table tbody tr.currency-entry'
 
@@ -48,7 +48,7 @@ export const getZemenRates = async () => {
         const cashSelling = parseFloat(
           (row.querySelectorAll('.current-rate')[1]?.textContent || '').trim()
         )
-        if (!currencyCode || !cashBuying || !cashSelling) return acc
+        if (!currencyCode || isNaN(cashBuying) || isNaN(cashSelling)) return acc
 
         return {
           ...acc,
@@ -72,6 +72,6 @@ export const getZemenRates = async () => {
     console.log(e)
     Sentry.captureException(e)
   } finally {
-    if (browser) browser.close()
+    if (browser) await browser.close()
   }
 }
