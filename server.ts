@@ -38,14 +38,14 @@ const bankJobs = [
     slug: 'nbe',
     symbol: 'nbe',
     name: 'National Bank of Ethiopia',
-    shortName: 'National Bank',
+    shortName: 'NBE',
     job: getNbeRates,
   },
   {
     slug: 'cbe',
     symbol: 'cbe',
     name: 'Commercial Bank of Ethiopia',
-    shortName: 'Commercial Bank',
+    shortName: 'CBE',
     job: getCbeRates,
   },
   {
@@ -221,7 +221,28 @@ const bankRateSchema = z.record(
 )
 
 const runBankJobs = async () => {
-  for (const bank of bankJobs) {
+  const bankRatesNewDB = await db('birrbot/bank_rate_new')
+
+  const rates = (await bankRatesNewDB
+    .get('current_bank_rates')
+    .catch(() => null)) as any
+
+  const banks = rates?.banks
+
+  // sort bankJobs by rates.rows updated at date
+  const bjs = bankJobs.sort((a, b) => {
+    const aRates = banks[a.slug]
+    const bRates = banks[b.slug]
+
+    const aRatesUpdatedAt = aRates?.updatedAt || null
+    const bRatesUpdatedAt = bRates?.updatedAt || null
+
+    return (
+      new Date(aRatesUpdatedAt).getTime() - new Date(bRatesUpdatedAt).getTime()
+    )
+  })
+
+  for (const bank of bjs) {
     try {
       console.log('running job:', bank.name)
       const res = await bank.job()
@@ -230,8 +251,6 @@ const runBankJobs = async () => {
         console.warn(`No rates returned for ${bank.name}. Skipping update.`)
         continue // Skip to the next bank job
       }
-
-      const bankRatesNewDB = await db('birrbot/bank_rate_new')
 
       const existing = (await bankRatesNewDB
         .get('current_bank_rates')
