@@ -30,6 +30,8 @@ import { getTsedeyBankRates } from './lib/banks/tsedey'
 import { getOromiaBankRates } from './lib/banks/oromia'
 import { getHibretRates } from './lib/banks/hibret'
 import { getNbeRates } from './lib/banks/nbe'
+import { getAnbesaBankRates } from './lib/banks/anbesa'
+import { getDbeRates } from './lib/banks/dbe'
 
 const cron = Sentry.cron.instrumentNodeCron(nodeCron)
 
@@ -84,6 +86,13 @@ const bankJobs = [
     job: getAmharaBankRates,
   },
   {
+    slug: 'anbesa',
+    symbol: 'anb',
+    name: 'Anbesa Bank',
+    shortName: 'Anbesa',
+    job: getAnbesaBankRates,
+  },
+  {
     slug: 'awash',
     symbol: 'awa',
     name: 'Awash Bank',
@@ -117,6 +126,13 @@ const bankJobs = [
     name: 'Dashen Bank',
     shortName: 'Dashen Bank',
     job: getDashenRates,
+  },
+  {
+    slug: 'dbe',
+    symbol: 'dbe',
+    name: 'Development Bank of Ethiopia',
+    shortName: 'DBE',
+    job: getDbeRates,
   },
   {
     slug: 'enat',
