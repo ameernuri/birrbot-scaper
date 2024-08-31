@@ -32,6 +32,7 @@ import { getHibretRates } from './lib/banks/hibret'
 import { getNbeRates } from './lib/banks/nbe'
 import { getAnbesaBankRates } from './lib/banks/anbesa'
 import { getDbeRates } from './lib/banks/dbe'
+import moment from 'moment'
 
 const cron = Sentry.cron.instrumentNodeCron(nodeCron)
 
@@ -246,17 +247,24 @@ const runBankJobs = async () => {
   const banks = rates?.banks
 
   // sort bankJobs by rates.rows updated at date
-  const bjs = bankJobs.sort((a, b) => {
-    const aRates = banks[a.slug]
-    const bRates = banks[b.slug]
+  const bjs = bankJobs
+    .filter((job) => {
+      return moment(banks[job.slug]?.updatedAt).isBefore(
+        moment().subtract(10, 'minutes')
+      )
+    })
+    .sort((a, b) => {
+      const aRates = banks[a.slug]
+      const bRates = banks[b.slug]
 
-    const aRatesUpdatedAt = aRates?.updatedAt || null
-    const bRatesUpdatedAt = bRates?.updatedAt || null
+      const aRatesUpdatedAt = aRates?.updatedAt || null
+      const bRatesUpdatedAt = bRates?.updatedAt || null
 
-    return (
-      new Date(aRatesUpdatedAt).getTime() - new Date(bRatesUpdatedAt).getTime()
-    )
-  })
+      return (
+        new Date(aRatesUpdatedAt).getTime() -
+        new Date(bRatesUpdatedAt).getTime()
+      )
+    })
 
   for (const bank of bjs) {
     try {

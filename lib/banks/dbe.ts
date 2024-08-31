@@ -11,7 +11,9 @@ const findExchangeImgUrl = async () => {
     await page.goto('https://www.dbe.com.et/')
 
     // Wait for the image element to load
-    await page.waitForSelector('.blog-featured .items-leading .leading-0 img')
+    await page.waitForSelector('.blog-featured .items-leading .leading-0 img', {
+      timeout: 15000,
+    })
 
     // Extract the image URL
     const imgUrl = await page.evaluate(() => {

@@ -10,7 +10,13 @@ export const getEnatRates = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -33,7 +39,7 @@ export const getEnatRates = async () => {
     const currencySelector = '#tablepress-1 tbody tr'
     const nextButtonSelector = '#tablepress-1_next'
 
-    await page.waitForSelector(currencySelector)
+    await page.waitForSelector(currencySelector, { timeout: 15000 })
 
     const exchangeRates = {}
 

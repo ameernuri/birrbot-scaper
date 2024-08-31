@@ -10,7 +10,13 @@ export const getTsedeyBankRates = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -32,7 +38,7 @@ export const getTsedeyBankRates = async () => {
 
     const currencySelector = '.wptb-preview-table tbody tr'
 
-    await page.waitForSelector(currencySelector)
+    await page.waitForSelector(currencySelector, { timeout: 15000 })
 
     const exchangeRates: {
       [key: string]: { cashBuying: number; cashSelling: number }

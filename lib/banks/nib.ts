@@ -10,7 +10,13 @@ export const getNibRates = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -32,9 +38,11 @@ export const getNibRates = async () => {
 
     const currencySelector = 'table tbody tr'
 
-    await page.waitForSelector(currencySelector).catch((e) => {
-      console.error('selector not found', e)
-    })
+    await page
+      .waitForSelector(currencySelector, { timeout: 15000 })
+      .catch((e) => {
+        console.error('selector not found', e)
+      })
     console.log('selector found')
 
     const exchangeRates = await page.evaluate((selector) => {

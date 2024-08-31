@@ -10,7 +10,13 @@ export const getAhaduRates = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -37,7 +43,7 @@ export const getAhaduRates = async () => {
 
     const slideSelector = '.swiper-slide'
 
-    await page.waitForSelector(slideSelector).catch((e) => {
+    await page.waitForSelector(slideSelector, { timeout: 15000 }).catch((e) => {
       console.error('Could not get selector', e)
     })
 
