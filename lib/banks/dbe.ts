@@ -93,13 +93,12 @@ function parseExchangeRates(text: string) {
         nextLine.length === 1 &&
         !isNaN(parseFloat(nextLine[0]))
       ) {
-        // This is the buying price, and the next line is the selling price
         rates[currentCurrency].cashBuying = value
+        rates[currentCurrency].transactionalBuying = value
         rates[currentCurrency].cashSelling = parseFloat(nextLine[0])
+        rates[currentCurrency].transactionalSelling = parseFloat(nextLine[0])
       }
     } else if (parts.length === 1 && isNaN(parseFloat(parts[0]))) {
-      // This is a currency name (e.g., "US DOLLAR")
-      // Move to the next iteration
     }
   })
 
