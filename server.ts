@@ -32,6 +32,8 @@ import { getHibretRates } from './lib/banks/hibret'
 import { getNbeRates } from './lib/banks/nbe'
 import { getAnbesaBankRates } from './lib/banks/anbesa'
 import { getDbeRates } from './lib/banks/dbe'
+import { getZamZamRates } from './lib/banks/zamzam'
+
 import moment from 'moment'
 
 const cron = Sentry.cron.instrumentNodeCron(nodeCron)
@@ -218,6 +220,13 @@ const bankJobs = [
     name: 'Wegagen Bank',
     shortName: 'Wegagen Bank',
     job: getWegagenRates,
+  },
+  {
+    slug: 'zamzam',
+    symbol: 'zam',
+    name: 'ZamZam Bank',
+    shortName: 'ZamZam Bank',
+    job: getZamZamRates,
   },
   {
     slug: 'zemen',
