@@ -10,7 +10,13 @@ export const getAbayRates = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -26,7 +32,7 @@ export const getAbayRates = async () => {
 
     const url = 'https://abaybank.com.et/exchange-rates/'
 
-    await page.goto(url, { waitUntil: 'domcontentloaded' })
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
 
     console.log('Parsing exchange rates...')
 

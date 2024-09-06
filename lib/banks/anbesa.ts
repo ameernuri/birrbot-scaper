@@ -1,10 +1,10 @@
 import puppeteer from 'puppeteer'
 import Sentry from '../sentry'
 
-export const getGadaaRates = async () => {
+export const getAnbesaBankRates = async () => {
   const executablePath = process.env.CHROMIUM_PATH
 
-  console.log('Scraping Gadaa Bank exchange rates...')
+  console.log('Scraping Anbesa Bank exchange rates...')
 
   const browser = await puppeteer.launch({
     headless: true,
@@ -35,39 +35,50 @@ export const getGadaaRates = async () => {
       height: 800,
     })
 
-    const url = 'https://www.gadaabank.com.et/'
+    const url = 'https://anbesabank.com/'
 
     await page.goto(url, { waitUntil: 'domcontentloaded' })
+
+    // Scroll the page to ensure lazy-loaded images are loaded
+    await page.evaluate(() => {
+      window.scrollBy(0, window.innerHeight)
+    })
 
     console.log('Parsing exchange rates...')
 
     const rates = await page.evaluate(() => {
-      const rows = Array.from(
-        document.querySelectorAll('#wpdtSimpleTable-1 tbody tr')
-      )
+      const rows = Array.from(document.querySelectorAll('table tbody tr'))
       const result: any = {}
+
+      const currencyMap: { [key: string]: string } = {
+        usd: 'USD',
+        pound: 'GBP',
+        euro: 'EUR',
+        // Add more mappings as necessary
+      }
 
       rows.forEach((row) => {
         const cells = row.querySelectorAll('td')
-        if (cells.length < 5) return // Ensure row has enough columns
+        if (cells.length < 3) return // Ensure row has enough columns
 
-        const currency = cells[0].innerText.trim().replace(/<.*>/, '').trim()
+        const img = cells[0].querySelector('img')
+        let currency = ''
+
+        if (img) {
+          // Check if data-src is available for lazy-loaded images
+          const lazySrc = img.getAttribute('data-src') || img.src
+          const currencyKey = lazySrc.split('/').pop()?.split('-')[0] || ''
+          currency =
+            currencyMap[currencyKey.toLowerCase()] || currencyKey.toUpperCase()
+        }
+
         const cashBuying = parseFloat(cells[1].innerText.trim())
         const cashSelling = parseFloat(cells[2].innerText.trim())
-        const transactionalBuying = parseFloat(cells[3].innerText.trim())
-        const transactionalSelling = parseFloat(cells[4].innerText.trim())
 
-        if (
-          !isNaN(cashBuying) &&
-          !isNaN(cashSelling) &&
-          !isNaN(transactionalBuying) &&
-          !isNaN(transactionalSelling)
-        ) {
+        if (currency && !isNaN(cashBuying) && !isNaN(cashSelling)) {
           result[currency] = {
             cashBuying,
             cashSelling,
-            transactionalBuying,
-            transactionalSelling,
           }
         }
       })

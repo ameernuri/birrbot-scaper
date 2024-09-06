@@ -10,7 +10,13 @@ export const getWegagenRatesOne = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -115,7 +121,7 @@ export const getWegagenRates = async () => {
 
     const tableSelector = '._popexchange_sa27i_1387 table tbody tr'
 
-    await page.waitForSelector(tableSelector).catch((e) => {
+    await page.waitForSelector(tableSelector, { timeout: 15000 }).catch((e) => {
       console.error('Could not get selector', e)
     })
 

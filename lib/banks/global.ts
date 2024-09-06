@@ -10,7 +10,13 @@ export const getGlobalRates = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -37,9 +43,11 @@ export const getGlobalRates = async () => {
 
     const currencySelector = '.wptb-table-container-matrix tbody tr'
 
-    await page.waitForSelector(currencySelector).catch((e) => {
-      console.error('could not get selector', e)
-    })
+    await page
+      .waitForSelector(currencySelector, { timeout: 15000 })
+      .catch((e) => {
+        console.error('could not get selector', e)
+      })
 
     const exchangeRates = await page.evaluate((selector) => {
       const rows = Array.from(document.querySelectorAll(selector)).slice(1)

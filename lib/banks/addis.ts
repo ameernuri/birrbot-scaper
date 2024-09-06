@@ -10,7 +10,13 @@ export const getAddisRates = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -32,9 +38,11 @@ export const getAddisRates = async () => {
 
     const currencySelector = '#tablepress-13 tbody tr'
 
-    await page.waitForSelector(currencySelector).catch((e) => {
-      console.error('Selector not found', e)
-    })
+    await page
+      .waitForSelector(currencySelector, { timeout: 15000 })
+      .catch((e) => {
+        console.error('Selector not found', e)
+      })
     console.log('Selector found')
 
     const exchangeRates = await page.evaluate((selector) => {

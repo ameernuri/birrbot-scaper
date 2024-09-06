@@ -10,7 +10,13 @@ export const getBunnaRates = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -26,9 +32,17 @@ export const getBunnaRates = async () => {
 
     const url = 'https://bunnabanksc.com/foreign-exchange/'
 
-    // Navigate to the page and wait for the content to load
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 })
-    await page.waitForSelector('.currency-table')
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+    const table = await page
+      .waitForSelector('.currency-table', {
+        timeout: 10000,
+      })
+      .catch((e) => console.error(e))
+
+    if (!table) {
+      console.log('Table not found.')
+      return
+    }
 
     console.log('Parsing exchange rates...')
 

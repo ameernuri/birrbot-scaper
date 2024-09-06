@@ -10,7 +10,13 @@ export const getAbyssiniaRates = async () => {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
     executablePath,
+    timeout: 15000,
   })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
+  }
 
   try {
     const page = await browser.newPage()
@@ -44,7 +50,7 @@ export const getAbyssiniaRates = async () => {
     let hasNextPage = true
 
     while (hasNextPage) {
-      await page.waitForSelector(currencySelector)
+      await page.waitForSelector(currencySelector, { timeout: 15000 })
 
       const pageRates = await page.evaluate((selector) => {
         const rows = Array.from(document.querySelectorAll(selector))
