@@ -322,11 +322,11 @@ const runBankJobs = async () => {
 
   for (const bank of bjs) {
     try {
-      const existing = (await bankRatesNewDB
+      const current = (await bankRatesNewDB
         .get('current_bank_rates')
         .catch(() => null)) as ExistingRates | null
 
-      if (!existing) {
+      if (!current) {
         console.warn(`Couldn't fetch existing rates. Skipping update.`)
         continue
       }
@@ -378,7 +378,7 @@ const runBankJobs = async () => {
         ) as CurrencyRates
 
         const previousRates: CurrencyRates =
-          existing?.banks?.[bank.slug]?.rates?.[currency] || {}
+          current?.banks?.[bank.slug]?.rates?.[currency] || {}
 
         // Check if any rates have changed
         const hasRatesChanged = Object.entries(definedRates).some(
@@ -413,21 +413,22 @@ const runBankJobs = async () => {
         shortName: bank.shortName,
         symbol: bank.symbol,
         rates: {
-          ...((banks[bank.slug]?.rates || {}) as BankRates),
+          ...((current.banks[bank.slug]?.rates || {}) as BankRates),
           ...updates,
         },
       }
 
-      const newBanks = {
-        ...banks,
-        [bank.slug]: bankData,
-      }
+      const banks = current.banks
+      banks[bank.slug] = bankData
 
       const update = {
-        ...existing,
+        ...current,
         updatedAt: now,
-        banks: newBanks,
+        banks,
       } as MaybeDocument
+
+      console.log({ update })
+      console.log({ bankData })
 
       await bankRatesNewDB
         .insert(update)
