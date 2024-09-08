@@ -38,7 +38,16 @@ import moment from 'moment'
 
 const cron = Sentry.cron.instrumentNodeCron(nodeCron)
 
-const bankJobs = [
+// Types for Bank Job
+interface BankJob {
+  slug: string
+  symbol: string
+  name: string
+  shortName: string
+  job: () => Promise<Record<string, CurrencyRates> | null>
+}
+
+const bankJobs: BankJob[] = [
   {
     slug: 'nbe',
     symbol: 'nbe',
@@ -237,6 +246,32 @@ const bankJobs = [
   },
 ]
 
+interface CurrencyRates {
+  updatedAt?: string
+  cashBuying?: number
+  cashSelling?: number
+  transactionalBuying?: number
+  transactionalSelling?: number
+}
+
+interface BankRates {
+  [currency: string]: CurrencyRates & { updatedAt: string }
+}
+
+interface Bank {
+  updatedAt: string
+  slug: string
+  name: string
+  shortName: string
+  symbol: string
+  rates: BankRates
+}
+
+interface ExistingRates {
+  banks: Record<string, Bank>
+}
+
+// Zod Schema for validation
 const bankRateSchema = z.record(
   z.object({
     cashBuying: z.number().optional(),
@@ -249,94 +284,159 @@ const bankRateSchema = z.record(
 const runBankJobs = async () => {
   const bankRatesNewDB = await db('birrbot/bank_rate_new')
 
-  const rates = (await bankRatesNewDB
+  // Fetch existing rates
+  const existing = (await bankRatesNewDB
     .get('current_bank_rates')
-    .catch(() => null)) as any
+    .catch(() => null)) as ExistingRates | null
 
-  const banks = rates?.banks
+  const banks = existing?.banks || {}
 
-  // sort bankJobs by rates.rows updated at date
+  // Sort jobs based on last update date, and filter those updated more than 10 minutes ago
   const bjs = bankJobs
-    .filter((job) => {
-      return moment(banks[job.slug]?.updatedAt).isBefore(
+    .filter((job) =>
+      moment(banks[job.slug]?.updatedAt).isBefore(
         moment().subtract(10, 'minutes')
       )
-    })
+    )
     .sort((a, b) => {
-      const aRates = banks[a.slug]
-      const bRates = banks[b.slug]
-
-      const aRatesUpdatedAt = aRates?.updatedAt || null
-      const bRatesUpdatedAt = bRates?.updatedAt || null
-
-      return (
-        new Date(aRatesUpdatedAt).getTime() -
-        new Date(bRatesUpdatedAt).getTime()
-      )
+      const aUpdatedAt = banks[a.slug]?.updatedAt || 0
+      const bUpdatedAt = banks[b.slug]?.updatedAt || 0
+      return new Date(aUpdatedAt).getTime() - new Date(bUpdatedAt).getTime()
     })
+
+  const allBanksRates = Object.values(banks).map((bank) => bank.rates)
+
+  // Utility function to calculate average rates
+  const calculateAverage = (ratesArr: (number | undefined)[]) => {
+    const filteredRates = ratesArr.filter(Boolean) as number[]
+    return filteredRates.length
+      ? filteredRates.reduce((a, b) => a + b, 0) / filteredRates.length
+      : 0
+  }
+
+  // Utility function to filter rates based on a range
+  const filterRange = (rate: number | undefined, avg: number) => {
+    if (!rate) return undefined
+    return rate > avg * 1.2 || rate < avg * 0.8 ? undefined : rate
+  }
 
   for (const bank of bjs) {
     try {
-      console.log('running job:', bank.name)
-      const res = await bank.job()
-
-      if (!res || !(Object.keys(res).length > 0)) {
-        console.warn(`No rates returned for ${bank.name}. Skipping update.`)
-        continue // Skip to the next bank job
-      }
-
       const existing = (await bankRatesNewDB
         .get('current_bank_rates')
-        .catch(() => null)) as any
+        .catch(() => null)) as ExistingRates | null
+
+      if (!existing) {
+        console.warn(`Couldn't fetch existing rates. Skipping update.`)
+        continue
+      }
+
+      console.log('Running job:', bank.name)
+      const res = await bank.job()
+
+      if (!res || Object.keys(res).length === 0) {
+        console.warn(`No rates returned for ${bank.name}. Skipping update.`)
+        continue
+      }
 
       const now = new Date().toISOString()
 
-      const { slug, name, shortName, symbol } = bank
+      const updates = Object.keys(res).reduce((acc, currency) => {
+        const buyingAvgs = allBanksRates
+          .map((rates) => {
+            const curr = rates[currency]
+            return curr
+              ? calculateAverage([curr.cashBuying, curr.transactionalBuying])
+              : 0
+          })
+          .filter(Boolean)
 
-      const updates = Object.keys(res).reduce((a, c) => {
-        const update = {
-          [c]: { ...res[c], updatedAt: now },
+        const sellingAvgs = allBanksRates
+          .map((rates) => {
+            const curr = rates[currency]
+            return curr
+              ? calculateAverage([curr.cashSelling, curr.transactionalSelling])
+              : 0
+          })
+          .filter(Boolean)
+
+        const buying = calculateAverage(buyingAvgs)
+        const selling = calculateAverage(sellingAvgs)
+
+        const C = res[currency]
+        const filteredRates: CurrencyRates = {
+          cashBuying: filterRange(C.cashBuying, buying),
+          cashSelling: filterRange(C.cashSelling, buying),
+          transactionalBuying: filterRange(C.transactionalBuying, selling),
+          transactionalSelling: filterRange(C.transactionalSelling, selling),
         }
 
-        return {
-          ...a,
-          ...update,
+        const definedRates = Object.fromEntries(
+          Object.entries(filteredRates).filter(
+            ([_, value]) => value !== undefined
+          )
+        ) as CurrencyRates
+
+        const previousRates: CurrencyRates =
+          existing?.banks?.[bank.slug]?.rates?.[currency] || {}
+
+        // Check if any rates have changed
+        const hasRatesChanged = Object.entries(definedRates).some(
+          ([key, value]) => {
+            return previousRates[key as keyof CurrencyRates] !== value
+          }
+        )
+
+        const newRates: any = {
+          ...previousRates,
+          ...definedRates,
+          updatedAt: previousRates.updatedAt || now,
         }
-      }, {})
 
-      const rates = {
-        ...(existing?.banks?.[slug]?.rates || {}),
-        ...updates,
-      }
+        // Add updatedAt only if rates have changed
+        if (hasRatesChanged) {
+          newRates.updatedAt = now
+        }
 
-      const parsed = {
-        [slug]: {
-          updatedAt: now,
-          slug,
-          name,
-          shortName,
-          symbol,
-          rates,
+        // Only add the currency if there are defined rates or changes
+        if (Object.keys(definedRates).length > 0) {
+          acc[currency] = newRates
+        }
+
+        return acc
+      }, {} as BankRates)
+
+      const bankData: Bank = {
+        updatedAt: now,
+        slug: bank.slug,
+        name: bank.name,
+        shortName: bank.shortName,
+        symbol: bank.symbol,
+        rates: {
+          ...((banks[bank.slug]?.rates || {}) as BankRates),
+          ...updates,
         },
       }
 
-      if (existing) {
-        const update = {
-          ...existing,
-          updatedAt: now,
-          banks: {
-            ...existing.banks,
-            ...parsed,
-          },
-        } as MaybeDocument
-        await bankRatesNewDB.insert(update)
-      } else {
-        await bankRatesNewDB.insert({
-          _id: 'current_bank_rates',
-          updatedAt: now,
-          banks: parsed,
-        } as MaybeDocument)
+      const newBanks = {
+        ...banks,
+        [bank.slug]: bankData,
       }
+
+      const update = {
+        ...existing,
+        updatedAt: now,
+        banks: newBanks,
+      } as MaybeDocument
+
+      await bankRatesNewDB
+        .insert(update)
+        .then(() => {
+          console.log(`Updated rates for ${bank.name}.`)
+        })
+        .catch((e) => {
+          console.error(`Error updating rates for ${bank.name}:`, e)
+        })
     } catch (e) {
       console.error(`Error running job for ${bank.name}:`, e)
     }

@@ -1,56 +1,33 @@
-import puppeteer from 'puppeteer'
+import axios from 'axios'
+import * as cheerio from 'cheerio'
 import Sentry from '../sentry'
 
 export const getAbayRates = async () => {
-  const executablePath = process.env.CHROMIUM_PATH
-
   console.log('Scraping Abay Bank exchange rates...')
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
-    executablePath,
-    timeout: 15000,
-  })
-
-  if (!browser) {
-    Sentry.captureException(new Error('Failed to launch browser'))
-    return
-  }
-
   try {
-    const page = await browser.newPage()
-
-    page.setRequestInterception(true)
-    page.on('request', (req) => {
-      if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
-        req.abort()
-      } else {
-        req.continue()
-      }
-    })
-
     const url = 'https://abaybank.com.et/exchange-rates/'
 
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+    // Fetch the HTML content
+    const { data } = await axios.get(url)
 
     console.log('Parsing exchange rates...')
 
+    // Load the HTML into Cheerio
+    const $ = cheerio.load(data)
+
     const currencySelector = 'table tbody tr'
 
-    const exchangeRates = await page.evaluate((selector) => {
-      const rows = Array.from(document.querySelectorAll(selector))
+    const exchangeRates = $(currencySelector)
+      .get()
+      .reduce((acc, row) => {
+        const cells = $(row).find('td')
 
-      return rows.reduce((acc, row) => {
-        const cells = row.querySelectorAll('td')
+        const currencyCode = $(cells[0]).text().trim().slice(-3).toUpperCase()
+        const cashBuying = parseFloat($(cells[1]).text().trim())
+        const cashSelling = parseFloat($(cells[2]).text().trim())
 
-        const currencyCode = cells[0].innerText.trim().slice(-3).toUpperCase()
-        const cashBuying = parseFloat(cells[1].innerText.trim())
-        const cashSelling = parseFloat(cells[2].innerText.trim())
-
-        if (!currencyCode || !cashBuying || !cashSelling) return acc
-
-        if (!currencyCode) return acc
+        if (!currencyCode || isNaN(cashBuying) || isNaN(cashSelling)) return acc
 
         return {
           ...acc,
@@ -59,12 +36,9 @@ export const getAbayRates = async () => {
             cashSelling,
           },
         }
-      }, {})
-    }, currencySelector)
+      }, {} as Record<string, { cashBuying: number; cashSelling: number }>)
 
-    await browser.close()
-
-    if (exchangeRates) {
+    if (Object.keys(exchangeRates).length > 0) {
       console.log({ exchangeRates })
       return exchangeRates
     } else {
@@ -75,7 +49,5 @@ export const getAbayRates = async () => {
     console.error('Error fetching exchange rates:', e)
     Sentry.captureException(e)
     return null
-  } finally {
-    if (browser) browser.close()
   }
 }
