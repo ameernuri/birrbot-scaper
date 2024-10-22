@@ -1,120 +1,108 @@
-import vision from '@google-cloud/vision'
-import axios from 'axios'
-import * as cheerio from 'cheerio'
-
-const findExchangeImgUrls = async () => {
-  try {
-    const { data: html } = await axios.get('https://www.dbe.com.et/')
-    const $ = cheerio.load(html)
-
-    // Get all image elements whose URLs contain "exchange_rate"
-    const imgUrls = $('img')
-      .map((_, el) => $(el).attr('src'))
-      .get()
-      .filter((url) => url && url.toLowerCase().includes('exchange_rate'))
-      .map((url) =>
-        url.startsWith('http') ? url : `https://www.dbe.com.et/${url}`
-      )
-
-    if (imgUrls.length) {
-      console.log('Found exchange rate image URLs:', imgUrls)
-      return imgUrls
-    } else {
-      console.log('No exchange rate image URLs found.')
-      return []
-    }
-  } catch (error) {
-    console.error('Error while finding exchange rate image URLs:', error)
-    return []
-  }
-}
-
-const client = new vision.ImageAnnotatorClient()
-
-async function detectTextFromUrl(imageUrl: string) {
-  try {
-    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' })
-    const imageBuffer = Buffer.from(response.data, 'binary')
-
-    const [result] = await client.textDetection({
-      image: { content: imageBuffer },
-    })
-    const detections = result.textAnnotations
-
-    if (detections?.length) {
-      const text = detections[0].description
-      console.log('Detected text from:', imageUrl)
-      console.log(text)
-      return text
-    } else {
-      console.log('No text detected in image:', imageUrl)
-      return ''
-    }
-  } catch (error) {
-    console.error('Error during text detection for image:', imageUrl, error)
-    return ''
-  }
-}
-
-function parseExchangeRates(text: string) {
-  const lines = text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line)
-
-  const rates: any = {}
-  let currentCurrency = ''
-
-  lines.forEach((line, index) => {
-    const parts = line.split(/\s+/)
-
-    if (parts.length === 1 && parts[0].length === 3) {
-      currentCurrency = parts[0]
-      rates[currentCurrency] = {}
-    } else if (parts.length === 1 && !isNaN(parseFloat(parts[0]))) {
-      const value = parseFloat(parts[0])
-      const nextLine = lines[index + 1]?.split(/\s+/)
-
-      if (
-        nextLine &&
-        nextLine.length === 1 &&
-        !isNaN(parseFloat(nextLine[0]))
-      ) {
-        rates[currentCurrency].cashBuying = value
-        rates[currentCurrency].transactionalBuying = value
-        rates[currentCurrency].cashSelling = parseFloat(nextLine[0])
-        rates[currentCurrency].transactionalSelling = parseFloat(nextLine[0])
-      }
-    }
-  })
-
-  return rates
-}
+import puppeteer from 'puppeteer'
+import Sentry from '../sentry'
 
 export const getDbeRates = async () => {
-  const imageUrls = await findExchangeImgUrls()
+  const executablePath = process.env.CHROMIUM_PATH || undefined
 
-  if (!imageUrls.length) {
-    console.log('No exchange rate image URLs found.')
-    return null
+  console.log('Scraping Development Bank of Ethiopia exchange rates...')
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process'],
+    executablePath,
+    timeout: 15000,
+  })
+
+  if (!browser) {
+    Sentry.captureException(new Error('Failed to launch browser'))
+    return
   }
 
-  // Iterate over all images and try to detect exchange rates
-  for (const imageUrl of imageUrls) {
-    const text = await detectTextFromUrl(imageUrl)
+  try {
+    const page = await browser.newPage()
 
-    if (text) {
-      const rates = parseExchangeRates(text)
+    page.setRequestInterception(true)
+    page.on('request', (req) => {
+      if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+        req.abort()
+      } else {
+        req.continue()
+      }
+    })
 
-      // Check if rates are successfully parsed (you can improve this check)
-      if (Object.keys(rates).length > 0) {
-        console.log('Parsed rates from image:', imageUrl)
-        console.log(JSON.stringify(rates, null, 2))
-        return rates
+    const url = 'https://dbe.com.et/'
+    await page.goto(url, { waitUntil: 'domcontentloaded' })
+
+    console.log('Parsing exchange rates...')
+
+    const currencySelector = '#tablepress-1 tbody tr'
+    const nextButtonSelector = '#tablepress-1_next'
+
+    const exchangeRates: {
+      [key: string]: {
+        cashBuying: number
+        cashSelling: number
+      }
+    } = {}
+
+    let hasNextPage = true
+
+    while (hasNextPage) {
+      await page.waitForSelector(currencySelector, { timeout: 15000 })
+
+      const pageRates = await page.evaluate((selector) => {
+        const rows = Array.from(document.querySelectorAll(selector))
+
+        return rows.reduce((acc: any, row) => {
+          const cells = row.querySelectorAll('td')
+
+          if (cells.length >= 4) {
+            const currencyCode = cells[1].innerText.trim().toUpperCase()
+            const cashBuying = parseFloat(cells[2].innerText.trim())
+            const cashSelling = parseFloat(cells[3].innerText.trim())
+
+            if (currencyCode && !isNaN(cashBuying) && !isNaN(cashSelling)) {
+              acc[currencyCode] = {
+                cashBuying,
+                cashSelling,
+              }
+            }
+          }
+
+          return acc
+        }, {})
+      }, currencySelector)
+
+      Object.assign(exchangeRates, pageRates)
+
+      const isNextDisabled = await page.$eval(nextButtonSelector, (btn) =>
+        btn.classList.contains('disabled')
+      )
+
+      hasNextPage = !isNextDisabled
+
+      if (hasNextPage) {
+        await page.click(nextButtonSelector)
+        await new Promise((resolve) => setTimeout(resolve, 1000))
       }
     }
-  }
 
-  console.log('No valid exchange rate data found in any image.')
-  return null
+    await browser.close()
+
+    if (Object.keys(exchangeRates).length > 0) {
+      // console.log({ exchangeRates })
+      return exchangeRates
+    } else {
+      console.log('Exchange rates not found.')
+      return null
+    }
+  } catch (e) {
+    console.error('Error fetching exchange rates:', e)
+    Sentry.captureException(e)
+    return null
+  } finally {
+    if (browser) {
+      browser.close()
+    }
+  }
 }

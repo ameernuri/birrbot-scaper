@@ -2,7 +2,7 @@ import puppeteer from 'puppeteer'
 import Sentry from '../sentry'
 
 export const getCoopRates = async () => {
-  const executablePath = process.env.CHROMIUM_PATH
+  const executablePath = process.env.CHROMIUM_PATH || undefined
 
   const browser = await puppeteer.launch({
     headless: true,

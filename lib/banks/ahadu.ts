@@ -2,7 +2,7 @@ import puppeteer from 'puppeteer'
 import Sentry from '../sentry'
 
 export const getAhaduRates = async () => {
-  const executablePath = process.env.CHROMIUM_PATH
+  const executablePath = process.env.CHROMIUM_PATH || undefined
 
   console.log('Scraping Ahadu Bank exchange rates...')
 

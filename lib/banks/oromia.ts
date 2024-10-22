@@ -2,7 +2,7 @@ import puppeteer from 'puppeteer'
 import Sentry from '../sentry'
 
 export const getOromiaBankRates = async () => {
-  const executablePath = process.env.CHROMIUM_PATH
+  const executablePath = process.env.CHROMIUM_PATH || undefined
 
   console.log('Scraping Oromia Bank exchange rates...')
 
